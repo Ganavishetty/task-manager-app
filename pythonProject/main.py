@@ -3,67 +3,66 @@ from datetime import datetime
 import random
 from collections import defaultdict
 import os
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-tasks = []
-task_id_counter = 1
+db = SQLAlchemy()
+login_manager = LoginManager()
+
+app.config['SECRET_KEY'] = 'your-secret-key'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tasks.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db.init_app(app)
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+# User model
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(150), unique=True, nullable=False)
+    password = db.Column(db.String(150), nullable=False)
+    tasks = db.relationship('Task', backref='user', lazy=True)
+
+# Task model
+class Task(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    text = db.Column(db.String(200), nullable=False)
+    priority = db.Column(db.String(20))
+    due_date = db.Column(db.String(50))
+    completed = db.Column(db.Boolean, default=False)
+    time = db.Column(db.String(20))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
- <meta charset="UTF-8" />
+    <meta charset="UTF-8" />
     <title>AutoDeployX - Task Manager</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
-    <style>
-        body {
-            background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        .app-container {
-            max-width: 900px;
-            margin: 40px auto;
-            padding: 2rem;
-            background-color: #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-        }
-        .task-completed {
-            text-decoration: line-through;
-            color: #999;
-        }
-        .priority-high { color: #d32f2f; font-weight: bold; }
-        .priority-medium { color: #f57c00; font-weight: bold; }
-        .priority-low { color: #388e3c; font-weight: bold; }
-        .calendar-box {
-            margin-top: 30px;
-        }
-        .day-label {
-            background: #e0f2f1;
-            padding: 6px;
-            font-weight: bold;
-            border-radius: 5px;
-        }
-        .suggestion-button {
-            margin: 2px;
-        }
-    </style>
 </head>
 <body>
-    <div class="app-container">
+    <div class="app-container" style="max-width:900px; margin:auto; padding:20px;">
+        <div class="d-flex justify-content-between mb-3">
+            <span>👤 Logged in as: {{ current_user.username }}</span>
+            <a href="/logout" class="btn btn-sm btn-outline-secondary">Logout</a>
+        </div>
+
         <h2 class="text-center mb-4">📅 AutoDeployX - GoalGrid</h2>
 
         {% if all_done %}
-        <div class="alert alert-success text-center" role="alert">
-            🌟 <strong>Fantastic!</strong> You've completed all your tasks for today. Keep shining! 🌈
-        </div>
+        <div class="alert alert-success text-center">🌟 All tasks for today are done!</div>
         {% endif %}
 
         <form method="POST" class="row g-2 mb-4">
-            <div class="col-sm-5">
-                <input type="text" name="task" class="form-control" placeholder="Add a task..." required />
-            </div>
+            <div class="col-sm-5"><input name="task" class="form-control" placeholder="Task" required></div>
             <div class="col-sm-2">
                 <select name="priority" class="form-select" required>
                     <option value="" disabled selected>Priority</option>
@@ -72,58 +71,29 @@ HTML_TEMPLATE = '''
                     <option>Low</option>
                 </select>
             </div>
-            <div class="col-sm-3">
-                <input type="date" name="due_date" class="form-control" required />
-            </div>
-            <div class="col-sm-2 d-grid">
-                <button type="submit" class="btn btn-success">Add</button>
-            </div>
+            <div class="col-sm-3"><input type="date" name="due_date" class="form-control" required></div>
+            <div class="col-sm-2"><button type="submit" class="btn btn-success w-100">Add</button></div>
         </form>
-
-        {% if suggestions %}
-        <div class="mb-3">
-            <h6>💡 AI Suggestions:</h6>
-            <div>
-                {% for s in suggestions %}
-                <form method="POST" style="display:inline;">
-                    <input type="hidden" name="task" value="{{ s }}">
-                    <input type="hidden" name="priority" value="Medium">
-                    <input type="hidden" name="due_date" value="{{ today }}">
-                    <button class="btn btn-sm btn-outline-success suggestion-button">{{ s }}</button>
-                </form>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
 
         <div class="calendar-box">
             {% for date, date_tasks in calendar.items() %}
                 <div class="mb-3">
-                    <div class="day-label">{{ date }}</div>
+                    <strong>{{ date }}</strong>
                     <ul class="list-group">
                         {% for task in date_tasks %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <li class="list-group-item d-flex justify-content-between">
                             <div>
                                 <form method="POST" action="/toggle/{{ task.id }}" style="display:inline;">
-                                    <input type="checkbox" name="completed" onchange="this.form.submit()" {% if task.completed %}checked{% endif %} />
+                                    <input type="checkbox" onchange="this.form.submit()" {% if task.completed %}checked{% endif %} />
                                 </form>
-                                <span class="{% if task.completed %}task-completed{% endif %}">
-                                    {{ task.text }} 
-                                    <small class="text-muted">({{ task.time }})</small>
-                                </span>
-                                <span class="
-                                    {% if task.priority == 'High' %}priority-high{% elif task.priority == 'Medium' %}priority-medium{% else %}priority-low{% endif %}
-                                ">
-                                    [{{ task.priority }}]
-                                </span>
+                                <span {% if task.completed %}style="text-decoration: line-through;"{% endif %}>{{ task.text }}</span>
+                                <small class="text-muted">[{{ task.priority }} - {{ task.time }}]</small>
                             </div>
-                            <a href="/delete/{{ task.id }}" class="btn btn-sm btn-outline-danger">Delete</a>
+                            <a href="/delete/{{ task.id }}" class="btn btn-sm btn-danger">Delete</a>
                         </li>
                         {% endfor %}
                     </ul>
                 </div>
-            {% else %}
-                <p class="text-muted">No tasks yet.</p>
             {% endfor %}
         </div>
     </div>
@@ -131,95 +101,116 @@ HTML_TEMPLATE = '''
 </html>
 '''
 
-
-def sort_tasks(task):
-    priority_order = {'High': 1, 'Medium': 2, 'Low': 3}
-    return (task['completed'], priority_order.get(task['priority'], 4), task['time'])
-
-
 def suggest_tasks():
     now = datetime.now()
     weekday = now.strftime('%A')
     hour = now.hour
     suggestions = []
-
-    if weekday == 'Monday':
-        suggestions.append("Plan weekly goals")
-    if weekday == 'Friday':
-        suggestions.append("Review weekly progress")
-    if hour < 10:
-        suggestions.append("Prioritize today's tasks")
-    if any(t['priority'] == 'High' and not t['completed'] for t in tasks):
+    if not current_user.is_authenticated:
+        return suggestions
+    tasks = Task.query.filter_by(user_id=current_user.id).all()
+    if weekday == 'Monday': suggestions.append("Plan weekly goals")
+    if weekday == 'Friday': suggestions.append("Review weekly progress")
+    if hour < 10: suggestions.append("Prioritize today's tasks")
+    if any(t.priority == 'High' and not t.completed for t in tasks):
         suggestions.append("Focus on urgent tasks")
-
     suggestions += random.sample([
-        "Take a short walk",
-        "Organize your files",
-        "Water your plants",
-        "Clear your inbox",
-        "Read an article"
-    ], k=2)
-
+        "Take a short walk", "Organize your files", "Water your plants",
+        "Clear your inbox", "Read an article"], k=2)
     return suggestions
 
-
 @app.route("/", methods=["GET", "POST"])
+@login_required
 def index():
-    global task_id_counter
     if request.method == "POST":
         text = request.form.get("task")
         priority = request.form.get("priority")
         due_date = request.form.get("due_date")
-        if text and priority and due_date:
-            task = {
-                "id": task_id_counter,
-                "text": text,
-                "priority": priority,
-                "due_date": due_date,
-                "completed": False,
-                "time": datetime.now().strftime("%H:%M:%S")
-            }
-            tasks.append(task)
-            task_id_counter += 1
+        new_task = Task(text=text, priority=priority, due_date=due_date,
+                        completed=False, time=datetime.now().strftime("%H:%M:%S"),
+                        user_id=current_user.id)
+        db.session.add(new_task)
+        db.session.commit()
         return redirect("/")
-
+    tasks = Task.query.filter_by(user_id=current_user.id).order_by(Task.completed, Task.time).all()
     calendar = defaultdict(list)
-    for task in sorted(tasks, key=sort_tasks):
-        calendar[task['due_date']].append(task)
-
+    for task in tasks:
+        calendar[task.due_date].append(task)
     today_str = datetime.now().strftime('%Y-%m-%d')
-    today_tasks = [t for t in tasks if t['due_date'] == today_str]
-    all_done = all(t['completed'] for t in today_tasks) if today_tasks else False
-
-    return render_template_string(HTML_TEMPLATE,
-                                  tasks=tasks,
-                                  calendar=calendar,
-                                  suggestions=suggest_tasks(),
-                                  today=today_str,
-                                  all_done=all_done)
-
+    today_tasks = [t for t in tasks if t.due_date == today_str]
+    all_done = all(t.completed for t in today_tasks) if today_tasks else False
+    return render_template_string(HTML_TEMPLATE, calendar=calendar,
+                                  today=today_str, all_done=all_done, current_user=current_user)
 
 @app.route("/delete/<int:id>")
+@login_required
 def delete(id):
-    global tasks
-    tasks = [t for t in tasks if t["id"] != id]
+    task = Task.query.filter_by(id=id, user_id=current_user.id).first()
+    if task:
+        db.session.delete(task)
+        db.session.commit()
     return redirect("/")
-
 
 @app.route("/toggle/<int:id>", methods=["POST"])
+@login_required
 def toggle_complete(id):
-    for task in tasks:
-        if task["id"] == id:
-            task["completed"] = not task["completed"]
-            break
+    task = Task.query.filter_by(id=id, user_id=current_user.id).first()
+    if task:
+        task.completed = not task.completed
+        db.session.commit()
     return redirect("/")
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            return redirect("/")
+        return "Invalid credentials"
+    return render_template_string('''<form method="POST" style="max-width:400px; margin:auto; padding:20px;">
+        <h3>Login</h3>
+        <input name="username" class="form-control mb-2" placeholder="Username" required>
+        <input name="password" type="password" class="form-control mb-2" placeholder="Password" required>
+        <button class="btn btn-success w-100">Login</button>
+        <p><a href="/register">Register</a></p>
+    </form>''')
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        if User.query.filter_by(username=username).first():
+            return "Username already exists"
+        hashed_pw = generate_password_hash(password, method='sha256')
+        user = User(username=username, password=hashed_pw)
+        db.session.add(user)
+        db.session.commit()
+        return redirect("/login")
+    return render_template_string('''<form method="POST" style="max-width:400px; margin:auto; padding:20px;">
+        <h3>Register</h3>
+        <input name="username" class="form-control mb-2" placeholder="Username" required>
+        <input name="password" type="password" class="form-control mb-2" placeholder="Password" required>
+        <button class="btn btn-primary w-100">Register</button>
+        <p><a href="/login">Login</a></p>
+    </form>''')
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect("/login")
 
 @app.route("/status")
 def status():
     return "OK", 200
 
+with app.app_context():
+    db.create_all()
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))  # use PORT from environment
-    app.run(host="0.0.0.0", port=port, debug=True)  # bind to external IP
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=True)
