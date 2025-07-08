@@ -27,7 +27,9 @@ class User(db.Model, UserMixin):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.String(150), nullable=False)
+    description = db.Column(db.String(500), default='')  # 🆕 New field
     tasks = db.relationship('Task', backref='user', lazy=True)
+
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -101,14 +103,42 @@ LOGIN_HTML = '''
 <body>
     <div class="login-box">
         <h2 class="text-center">🔐 Welcome to AutoDeployX</h2>
+
+        {% with messages = get_flashed_messages() %}
+        {% if messages %}
+        <div class="alert alert-danger">{{ messages[0] }}</div>
+        {% endif %}
+        {% endwith %}
+
         <form method="POST">
             <div class="mb-3">
-                <input type="text" name="username" class="form-control" placeholder="Username" required />
+                <input type="text" name="username"
+                       class="form-control {% if username_invalid %}is-invalid{% endif %}"
+                       placeholder="Username" required />
+                {% if username_invalid %}
+                <div class="invalid-feedback">Username not found</div>
+                {% endif %}
             </div>
+
             <div class="input-group mb-3">
-    <input type="password" name="password" class="form-control" placeholder="Password" id="passwordInput" required />
-    <span class="input-group-text" onclick="togglePassword('passwordInput', this)">👁️</span>
-</div>
+                <input type="password" name="password" id="passwordInput"
+                       class="form-control {% if password_invalid %}is-invalid{% endif %}"
+                       placeholder="Password" required />
+                <span class="input-group-text" onclick="togglePassword('passwordInput', this)">👁️</span>
+            </div>
+            {% if password_invalid %}
+            <div class="text-danger mb-2">Incorrect password</div>
+            {% endif %}
+
+            <div class="d-grid mb-3">
+                <button type="submit" class="btn btn-primary">Login</button>
+            </div>
+        </form>
+        <p class="text-center">New user? <a href="/signup">Sign up</a></p>
+        <p class="mt-2">
+            <a href="/forgot-password" class="text-decoration-none">Forgot your password?</a>
+        </p>
+    </div>
 
 <script>
 function togglePassword(fieldId, iconElement) {
@@ -122,19 +152,11 @@ function togglePassword(fieldId, iconElement) {
     }
 }
 </script>
-            <div class="d-grid mb-3">
-                <button type="submit" class="btn btn-primary">Login</button>
-            </div>
-        </form>
-        <p class="text-center">New user? <a href="/signup">Sign up</a></p>
-        <p class="mt-2">
-    <a href="/forgot-password" class="text-decoration-none">Forgot your password?</a>
-    </p>
 
-    </div>
 </body>
 </html>
 '''
+
 
 
 SIGNUP_HTML = '''
@@ -201,6 +223,48 @@ SIGNUP_HTML = '''
 '''
 
 
+PROFILE_HTML = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Profile - AutoDeployX</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <div class="card p-4 shadow" style="max-width: 500px; margin:auto;">
+            <h4 class="mb-3 text-center">👤 Edit Your Profile</h4>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+              {% if messages %}
+                {% for category, message in messages %}
+                  <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+              {% endif %}
+            {% endwith %}
+            <form method="POST">
+                <div class="mb-3">
+                    <label class="form-label">Username</label>
+                    <input name="username" value="{{ user.username }}" class="form-control" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Description</label>
+                    <textarea name="description" class="form-control" placeholder="Tell us about yourself..." rows="4">{{ user.description }}</textarea>
+                </div>
+                <div class="d-grid">
+                    <button class="btn btn-primary">💾 Save Changes</button>
+                </div>
+            </form>
+            <div class="text-center mt-3">
+                <a href="/" class="text-decoration-none">⬅️ Back to Home</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+'''
+
+
+
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
@@ -239,10 +303,21 @@ HTML_TEMPLATE = '''
 <div class="container py-4">
 
     <!-- Header -->
+    
     <div class="sticky-header d-flex justify-content-between align-items-center">
-        <div class="ms-3"><strong>👤 {{ current_user.username }}</strong></div>
-        <a href="/logout" class="btn btn-danger btn-sm logout-btn me-3">🔓 Logout</a>
+    <div class="ms-3">
+        <a href="/profile" class="text-decoration-none fw-bold">👤 {{ current_user.username }}</a>
+        {% if current_user.description %}
+            <div class="text-muted small">{{ current_user.description }}</div>
+        {% else %}
+            <div class="text-muted small fst-italic">No description added</div>
+        {% endif %}
     </div>
+    <a href="/logout" class="btn btn-danger btn-sm logout-btn me-3">🔓 Logout</a>
+</div>
+
+    
+
 
     <!-- App Title -->
     <div class="text-center my-4">
@@ -403,15 +478,26 @@ def delete(id):
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
+    username_invalid = False
+    password_invalid = False
+
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
         user = User.query.filter_by(username=username).first()
-        if user and check_password_hash(user.password, password):
+
+        if not user:
+            username_invalid = True
+        elif not check_password_hash(user.password, password):
+            password_invalid = True
+        else:
             login_user(user)
             return redirect("/")
+
         flash("Invalid username or password.")
-    return render_template_string(LOGIN_HTML)
+
+    return render_template_string(LOGIN_HTML, username_invalid=username_invalid, password_invalid=password_invalid)
+
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -431,6 +517,28 @@ def signup():
 def logout():
     logout_user()
     return redirect("/login")
+
+
+
+@app.route("/profile", methods=["GET", "POST"])
+@login_required
+def profile():
+    if request.method == "POST":
+        new_username = request.form["username"]
+        new_description = request.form["description"]
+
+        # Prevent duplicate usernames
+        if new_username != current_user.username and User.query.filter_by(username=new_username).first():
+            flash("Username already taken!", "danger")
+        else:
+            current_user.username = new_username
+            current_user.description = new_description
+            db.session.commit()
+            flash("Profile updated successfully!", "success")
+            return redirect("/profile")
+
+    return render_template_string(PROFILE_HTML, user=current_user)
+
 
 @app.route("/status")
 def status():
@@ -499,7 +607,10 @@ function togglePassword(fieldId, icon) {
 
 
 with app.app_context():
+    # TEMPORARY FIX: Drop and recreate all tables
+    #db.drop_all()
     db.create_all()
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
