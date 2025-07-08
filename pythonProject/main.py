@@ -220,4 +220,5 @@ def status():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 10000))  # use PORT from environment
+    app.run(host="0.0.0.0", port=port, debug=True)  # bind to external IP
