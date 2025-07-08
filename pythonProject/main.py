@@ -5,15 +5,19 @@ from collections import defaultdict
 import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.security import  check_password_hash
+
+from werkzeug.security import generate_password_hash
 
 app = Flask(__name__)
+
 db = SQLAlchemy()
 login_manager = LoginManager()
 
 app.config['SECRET_KEY'] = 'your-secret-key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tasks.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 
 db.init_app(app)
 login_manager.init_app(app)
@@ -101,14 +105,32 @@ LOGIN_HTML = '''
             <div class="mb-3">
                 <input type="text" name="username" class="form-control" placeholder="Username" required />
             </div>
-            <div class="mb-3">
-                <input type="password" name="password" class="form-control" placeholder="Password" required />
-            </div>
+            <div class="input-group mb-3">
+    <input type="password" name="password" class="form-control" placeholder="Password" id="passwordInput" required />
+    <span class="input-group-text" onclick="togglePassword('passwordInput', this)">👁️</span>
+</div>
+
+<script>
+function togglePassword(fieldId, iconElement) {
+    const input = document.getElementById(fieldId);
+    if (input.type === "password") {
+        input.type = "text";
+        iconElement.textContent = "🙈";
+    } else {
+        input.type = "password";
+        iconElement.textContent = "👁️";
+    }
+}
+</script>
             <div class="d-grid mb-3">
                 <button type="submit" class="btn btn-primary">Login</button>
             </div>
         </form>
         <p class="text-center">New user? <a href="/signup">Sign up</a></p>
+        <p class="mt-2">
+    <a href="/forgot-password" class="text-decoration-none">Forgot your password?</a>
+    </p>
+
     </div>
 </body>
 </html>
@@ -399,6 +421,68 @@ def logout():
 @app.route("/status")
 def status():
     return "OK", 200
+
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        username = request.form['username']
+        new_password = request.form['password']
+        confirm_password = request.form['confirm_password']
+
+        if new_password != confirm_password:
+            flash('Passwords do not match!', 'danger')
+            return redirect('/forgot-password')
+
+        user = User.query.filter_by(username=username).first()
+        if user:
+            user.password = generate_password_hash(new_password)
+            db.session.commit()
+            flash('Password reset successful! Please login.', 'success')
+            return redirect('/login')
+        else:
+            flash('User not found.', 'danger')
+            return redirect('/forgot-password')
+
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html><head><title>Reset Password</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"></head>
+    <body class="d-flex align-items-center justify-content-center vh-100 bg-light">
+        <div class="card p-4" style="max-width: 400px;">
+            <h4 class="text-center mb-3">🔐 Reset Your Password</h4>
+            <form method="POST">
+                <input type="text" name="username" class="form-control mb-3" placeholder="Enter your username" required>
+                <div class="input-group mb-3">
+    <input type="password" name="password" class="form-control" placeholder="New password" id="newPassword" required>
+    <span class="input-group-text" onclick="togglePassword('newPassword', this)">👁️</span>
+</div>
+
+<div class="input-group mb-3">
+    <input type="password" name="confirm_password" class="form-control" placeholder="Confirm password" id="confirmPassword" required>
+    <span class="input-group-text" onclick="togglePassword('confirmPassword', this)">👁️</span>
+</div>
+
+<script>
+function togglePassword(fieldId, icon) {
+    const input = document.getElementById(fieldId);
+    if (input.type === "password") {
+        input.type = "text";
+        icon.textContent = "🙈";
+    } else {
+        input.type = "password";
+        icon.textContent = "👁️";
+    }
+}
+</script>
+
+                <button type="submit" class="btn btn-primary w-100">Reset Password</button>
+            </form>
+            <a href="/login" class="d-block mt-3 text-center">Back to login</a>
+        </div>
+    </body></html>
+    ''')
+
 
 with app.app_context():
     db.create_all()
