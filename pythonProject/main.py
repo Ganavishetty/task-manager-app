@@ -173,9 +173,23 @@ SIGNUP_HTML = '''
             <div class="mb-3">
                 <input type="text" name="username" class="form-control" placeholder="Username" required />
             </div>
-            <div class="mb-3">
-                <input type="password" name="password" class="form-control" placeholder="Password" required />
-            </div>
+            <div class="mb-3 position-relative">
+    <input type="password" name="password" id="passwordInput" class="form-control" placeholder="Password" required />
+    <span id="monkeyToggle" class="position-absolute top-50 end-0 translate-middle-y me-3" style="cursor:pointer; font-size: 20px;">🙈</span>
+</div>
+
+<script>
+    const monkeyToggle = document.getElementById("monkeyToggle");
+    const passwordInput = document.getElementById("passwordInput");
+
+    monkeyToggle.addEventListener("click", function () {
+        const isPassword = passwordInput.type === "password";
+        passwordInput.type = isPassword ? "text" : "password";
+        monkeyToggle.textContent = isPassword ? "🙉" : "🙈"; // Toggle monkey face
+    });
+</script>
+
+
             <div class="d-grid mb-3">
                 <button type="submit" class="btn btn-success">Sign Up</button>
             </div>
