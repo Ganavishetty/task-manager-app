@@ -1,0 +1,23 @@
+name: Daily Backup to Google Drive
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Runs daily at midnight UTC
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rclone Config
+        run: |
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONF }}" > ~/.config/rclone/rclone.conf
+
+      - name: Upload tasks.db to Google Drive
+        run: |
+          rclone copy "pythonProject/tasks.db" "mydrive:/AutoDeployXBackup" --create-empty-src-dirs
