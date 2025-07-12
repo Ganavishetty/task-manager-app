@@ -2,7 +2,7 @@ name: Daily Backup to Google Drive
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # every day at 00:00 UTC
+    - cron: '0 0 * * *'  # Every day at midnight UTC
   workflow_dispatch:
 
 jobs:
@@ -12,6 +12,10 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
+      - name: Set up rclone
+        run: |
+          curl https://rclone.org/install.sh | sudo bash
 
       - name: Setup Rclone Config
         run: |
