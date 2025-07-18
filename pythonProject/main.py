@@ -321,7 +321,7 @@ HTML_TEMPLATE = '''
 
     <!-- App Title -->
     <div class="text-center my-4">
-        <h2 class="fw-bold">📅 AutoDeployX - GoalGrid</h2>
+        <h2 class="fw-bold">📅 AutoDeployX - GoalGrid and autodeployx</h2>
         <p class="text-muted">Your smart AI-powered daily task planner</p>
     </div>
 
