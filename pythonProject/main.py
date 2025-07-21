@@ -360,7 +360,7 @@ HTML_TEMPLATE = '''
 
     <!-- AI Suggestions -->
     <div class="task-card mb-4">
-        <h5 class="mb-3">💡 AI Suggestions</h5>
+        <h5 class="mb-3">💡 Suggested  AI Suggestions</h5>
         {% if suggestions %}
             {% for s in suggestions %}
             <button type="button" class="btn btn-outline-info btn-sm m-1"
